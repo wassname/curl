@@ -206,9 +206,9 @@ class CURL(nn.Module):
         """
         if ema:
             with torch.no_grad():
-                z_out = self.encoder_target(x)
+                z_out = self.encoder_target(x, with_state=False)
         else:
-            z_out = self.encoder(x)
+            z_out = self.encoder(x, with_state=False)
 
         if detach:
             z_out = z_out.detach()

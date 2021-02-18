@@ -120,8 +120,10 @@ class MixedEncoder(PixelEncoder):
         img_shape = obs_shape['img']
         super().__init__(img_shape, feature_dim, num_layers, num_filters, output_logits)
         self.feature_dim = feature_dim + obs_shape['state'][0]
-    def forward(self, obs, detach=False):
+    def forward(self, obs, detach=False, with_state=True):
         h = super().forward(obs['img'], detach)
+        if not with_state:
+            return h
         return torch.cat([obs['state'], h], 1)
 
 

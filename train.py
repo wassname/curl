@@ -39,7 +39,7 @@ def parse_args():
     # train
     parser.add_argument("--agent", default="curl_sac", type=str)
     parser.add_argument("--init_steps", default=1000, type=int)
-    parser.add_argument("--num_train_steps", default=1000000, type=int)
+    parser.add_argument("--num_train_steps", default=3000000, type=int)
     parser.add_argument("--batch_size", default=32, type=int)
     parser.add_argument("--hidden_dim", default=1024, type=int)
     # eval
@@ -261,10 +261,10 @@ def main():
     episode, episode_reward, done = 0, 0, True
     start_time = time.time()
 
-    for step in tqdm(range(args.num_train_steps), desc="train", unit="step"):
+    for step in tqdm(range(args.num_train_steps), desc="train", unit="step", mininterval=360):
         # evaluate agent periodically
 
-        if step % args.eval_freq == 400:
+        if (step % args.eval_freq == 0) and (step > args.eval_freq):
             L.log("eval/episode", episode, step)
             evaluate(env, agent, video, args.num_eval_episodes, L, step, args)
             if args.save_model:

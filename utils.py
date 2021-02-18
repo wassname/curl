@@ -103,24 +103,26 @@ class ReplayBuffer(Dataset):
         self.idx = (self.idx + 1) % self.capacity
         self.full = self.full or self.idx == 0
 
+    def unflatten_obs(self, obs):
+        obs = [unflatten(o, self.obs_space) for o in obs]
+        obs = {
+            k: np.stack([o[k] for o in obs])
+            for k in obs[0].keys()
+        }
+        return obs
+
+
     def sample_proprio(self):
         
         idxs = np.random.randint(
             0, self.capacity if self.full else self.idx, size=self.batch_size
         )
         
-        obses = self.obses[idxs]
-        next_obses = self.next_obses[idxs]
+        obses = self.as_tensor_obs(self.unflatten_obs(self.obses[idxs]))
+        next_obses = self.as_tensor_obs(self.unflatten_obs(self.next_obses[idxs]))
 
-        obses = unflatten(obses, self.obs_space)
-        next_obses = unflatten(next_obses, self.obs_space)
-
-        obses = torch.as_tensor(obses, device=self.device).float()
         actions = torch.as_tensor(self.actions[idxs], device=self.device)
         rewards = torch.as_tensor(self.rewards[idxs], device=self.device)
-        next_obses = torch.as_tensor(
-            next_obses, device=self.device
-        ).float()
         not_dones = torch.as_tensor(self.not_dones[idxs], device=self.device)
         return obses, actions, rewards, next_obses, not_dones
 
@@ -130,12 +132,9 @@ class ReplayBuffer(Dataset):
         idxs = np.random.randint(
             0, self.capacity if self.full else self.idx, size=self.batch_size
         )
-      
-        obses_raw = self.obses[idxs]
-        next_obses_raw = self.next_obses[idxs]
-
-        obses_raw = unflatten(obses_raw, self.obs_space)
-        next_obses_raw = unflatten(next_obses_raw, self.obs_space)
+        
+        obses_raw = self.unflatten_obs(self.obses[idxs])
+        next_obses_raw = self.unflatten_obs(self.next_obses[idxs])
 
         # Split mixed obs into image and state
         state, obses = split_obs(obses_raw)
@@ -149,23 +148,23 @@ class ReplayBuffer(Dataset):
         pos = random_crop(pos, self.image_size)
 
         # Recombine
-        obses = combine_obs(state, obses)
-        next_obses = combine_obs(next_state, next_obses)
-        pos = combine_obs(state, pos)
-    
-        obses = torch.as_tensor(obses, device=self.device).float()
-        next_obses = torch.as_tensor(
-            next_obses, device=self.device
-        ).float()
+        obses = self.as_tensor_obs(combine_obs(state, obses))
+        next_obses = self.as_tensor_obs(combine_obs(next_state, next_obses))
+        pos = self.as_tensor_obs(combine_obs(state, pos))
+        
         actions = torch.as_tensor(self.actions[idxs], device=self.device)
         rewards = torch.as_tensor(self.rewards[idxs], device=self.device)
         not_dones = torch.as_tensor(self.not_dones[idxs], device=self.device)
 
-        pos = torch.as_tensor(pos, device=self.device).float()
         cpc_kwargs = dict(obs_anchor=obses, obs_pos=pos,
                           time_anchor=None, time_pos=None)
 
         return obses, actions, rewards, next_obses, not_dones, cpc_kwargs
+
+    def as_tensor_obs(self, obses):
+        obses['img'] = torch.as_tensor(obses['img'], device=self.device).float()
+        obses['state'] = torch.as_tensor(obses['state'], device=self.device).float()
+        return obses
 
     def save(self, save_dir):
         if self.idx == self.last_save:
@@ -201,14 +200,11 @@ class ReplayBuffer(Dataset):
             0, self.capacity if self.full else self.idx, size=1
         )
         idx = idx[0]
-        obs = self.obses[idx]
+        obs = self.unflatten_obs(self.obses[idx])
         action = self.actions[idx]
         reward = self.rewards[idx]
-        next_obs = self.next_obses[idx]
+        next_obs = self.unflatten_obs(self.next_obses[idx])
         not_done = self.not_dones[idx]
-
-        obs = unflatten(obs, self.obs_space)
-        next_obs = unflatten(next_obs, self.obs_space)
 
         if self.transform:
             obs = self.transform(obs)
@@ -217,7 +213,7 @@ class ReplayBuffer(Dataset):
         return obs, action, reward, next_obs, not_done
 
     def __len__(self):
-        return self.capacity 
+        return self.capacity
 
 
 def random_crop(imgs, output_size):
