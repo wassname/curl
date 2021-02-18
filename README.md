@@ -3,25 +3,25 @@ Adapt to Apple gym
 
 TODO:
 - apple
-  - make env that returns seperate obs dict
-  - make a wrapper that flattens act, and normalises act
-  - make a wrapper that flattens obs...
-  - mkae a wrapper that does grconv
+  - [x] make env that returns seperate obs dict
+  - [x] make a wrapper that flattens act, and normalises act
+  - [x] make a wrapper that flattens obs...
+  - make a wrapper that does grconv
   - norm
     - [x] space should be acc, but it's not fix in diy gym
-    - [ ] a wrapper that will normaction
-    - [ ] a wrapper to norm dict obs
-    - then norm based on space?
+    - [x] a wrapper that will normaction
+    - [x] a wrapper to norm dict obs
+    - [x] then norm based on space?
 - this
-  - make env handle it
-  - make replay buffer handle it
+  - [x] make env handle it
+  - [x] make replay buffer handle it
 
 - we take in flat array which contains [...state, ...img_flat]
 - we reshape in encoder
 - no resize img
 - always use pixels of course, otherwise no curl
-- [ ] replay buffer store flat... even tho pixel mode
-- [ ] custom encoder?
+- [x] replay buffer store fl at... even tho pixel mode
+- [x] custom encoder?
 
 
 `./scripts/run.sh`

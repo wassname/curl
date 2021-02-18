@@ -74,7 +74,7 @@ class MetersGroup(object):
         return template % (key, value)
 
     def _dump_to_console(self, data, prefix):
-        prefix = colored(prefix, 'yellow' if prefix == 'train' else 'green')
+        # prefix = colored(prefix, 'yellow' if prefix == 'train' else 'green')
         pieces = ['{:5}'.format(prefix)]
         for key, disp_key, ty in self._formating:
             value = data.get(key, 0)

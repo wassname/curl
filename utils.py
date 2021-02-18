@@ -76,7 +76,7 @@ class ReplayBuffer(Dataset):
         self.image_size = image_size
         self.transform = transform
         # the proprioceptive obs is stored as float32, mixeds obs as uint8
-        obs_dtype = np.float32 if len(obs_shape) == 1 else np.uint8
+        obs_dtype = np.float16 if len(obs_shape) == 1 else np.uint8
         
         self.obses = np.empty((capacity, *obs_shape), dtype=obs_dtype)
         self.next_obses = np.empty((capacity, *obs_shape), dtype=obs_dtype)
@@ -93,6 +93,7 @@ class ReplayBuffer(Dataset):
 
     def add(self, obs, action, reward, next_obs, done):
         obs = flatten(obs)
+        next_obs = flatten(next_obs)
         np.copyto(self.obses[self.idx], obs)
         np.copyto(self.actions[self.idx], action)
         np.copyto(self.rewards[self.idx], reward)
