@@ -248,7 +248,7 @@ class CurlSacAgent(object):
         critic_beta=0.9,
         critic_tau=0.005,
         critic_target_update_freq=2,
-        encoder_type='pixel',
+        encoder_type='mixed',
         encoder_feature_dim=50,
         encoder_lr=1e-3,
         encoder_tau=0.005,
@@ -267,7 +267,7 @@ class CurlSacAgent(object):
         self.critic_target_update_freq = critic_target_update_freq
         self.cpc_update_freq = cpc_update_freq
         self.log_interval = log_interval
-        self.image_size = obs_shape[-1]
+        self.image_size = obs_shape['img'][-1]
         self.curl_latent_dim = curl_latent_dim
         self.detach_encoder = detach_encoder
         self.encoder_type = encoder_type
@@ -311,7 +311,7 @@ class CurlSacAgent(object):
             [self.log_alpha], lr=alpha_lr, betas=(alpha_beta, 0.999)
         )
 
-        if self.encoder_type == 'pixel':
+        if self.encoder_type == 'mixed':
             # create CURL encoder (the 128 batch size is probably unnecessary)
             self.CURL = CURL(obs_shape, encoder_feature_dim,
                         self.curl_latent_dim, self.critic,self.critic_target, output_type='continuous').to(self.device)
@@ -333,7 +333,7 @@ class CurlSacAgent(object):
         self.training = training
         self.actor.train(training)
         self.critic.train(training)
-        if self.encoder_type == 'pixel':
+        if self.encoder_type == 'mixed':
             self.CURL.train(training)
 
     @property
@@ -342,20 +342,22 @@ class CurlSacAgent(object):
 
     def select_action(self, obs):
         with torch.no_grad():
-            obs = torch.FloatTensor(obs).to(self.device)
-            obs = obs.unsqueeze(0)
+            obs['img'] = torch.FloatTensor(obs['img']).to(self.device).unsqueeze(0)
+            obs['state'] = torch.FloatTensor(obs['state']).to(self.device).unsqueeze(0)
             mu, _, _, _ = self.actor(
                 obs, compute_pi=False, compute_log_pi=False
             )
             return mu.cpu().data.numpy().flatten()
 
     def sample_action(self, obs):
-        if obs.shape[-1] != self.image_size:
-            obs = utils.center_crop_image(obs, self.image_size)
+        if obs['img'].shape[-1] != self.image_size:
+            state, img = utils.split_obs(obs)
+            img = utils.center_crop_image(img, self.image_size)
+            obs = utils.combine_obs(state, img)
  
         with torch.no_grad():
-            obs = torch.FloatTensor(obs).to(self.device)
-            obs = obs.unsqueeze(0)
+            obs['img'] = torch.FloatTensor(obs['img']).to(self.device).unsqueeze(0)
+            obs['state'] = torch.FloatTensor(obs['state']).to(self.device).unsqueeze(0)
             mu, pi, _, _ = self.actor(obs, compute_log_pi=False)
             return pi.cpu().data.numpy().flatten()
 
@@ -435,7 +437,7 @@ class CurlSacAgent(object):
 
 
     def update(self, replay_buffer, L, step):
-        if self.encoder_type == 'pixel':
+        if self.encoder_type == 'mixed':
             obs, action, reward, next_obs, not_done, cpc_kwargs = replay_buffer.sample_cpc()
         else:
             obs, action, reward, next_obs, not_done = replay_buffer.sample_proprio()
@@ -460,7 +462,7 @@ class CurlSacAgent(object):
                 self.encoder_tau
             )
         
-        if step % self.cpc_update_freq == 0 and self.encoder_type == 'pixel':
+        if step % self.cpc_update_freq == 0 and self.encoder_type == 'mixed':
             obs_anchor, obs_pos = cpc_kwargs["obs_anchor"], cpc_kwargs["obs_pos"]
             self.update_cpc(obs_anchor, obs_pos,cpc_kwargs, L, step)
 

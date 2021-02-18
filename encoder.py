@@ -15,7 +15,7 @@ OUT_DIM_64 = {2: 29, 4: 25, 6: 21}
 
 
 class PixelEncoder(nn.Module):
-    """Convolutional encoder of pixels observations."""
+    """Convolutional encoder of mixeds observations."""
     def __init__(self, obs_shape, feature_dim, num_layers=2, num_filters=32,output_logits=False):
         super().__init__()
 
@@ -114,7 +114,19 @@ class IdentityEncoder(nn.Module):
         pass
 
 
-_AVAILABLE_ENCODERS = {'pixel': PixelEncoder, 'identity': IdentityEncoder}
+
+class MixedEncoder(PixelEncoder):
+    def __init__(self, obs_shape, feature_dim, num_layers=2, num_filters=32, output_logits=False):
+        img_shape = obs_shape['img']
+        super().__init__(img_shape, feature_dim, num_layers, num_filters, output_logits)
+        self.feature_dim = feature_dim + obs_shape['state'][0]
+    def forward(self, obs, detach=False):
+        h = super().forward(obs['img'], detach)
+        return torch.cat([obs['state'], h], 1)
+
+
+
+_AVAILABLE_ENCODERS = {'pixel': PixelEncoder, 'identity': IdentityEncoder, 'mixed': MixedEncoder}
 
 
 def make_encoder(

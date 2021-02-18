@@ -3,11 +3,11 @@ import numpy as np
 import torch.nn as nn
 import gym
 import os
-from collections import deque
 import random
 from torch.utils.data import Dataset, DataLoader
 import time
 from skimage.util.shape import view_as_windows
+from diy_gym.utils import flatten, unflatten
 
 class eval_mode(object):
     def __init__(self, *models):
@@ -48,10 +48,7 @@ def module_hash(module):
 
 
 def make_dir(dir_path):
-    try:
-        os.mkdir(dir_path)
-    except OSError:
-        pass
+    os.makedirs(dir_path, exist_ok=True)
     return dir_path
 
 
@@ -69,13 +66,16 @@ def preprocess_obs(obs, bits=5):
 
 class ReplayBuffer(Dataset):
     """Buffer to store environment transitions."""
-    def __init__(self, obs_shape, action_shape, capacity, batch_size, device,image_size=84,transform=None):
+    def __init__(self, obs_space, action_space, capacity, batch_size, device, image_size=84, transform=None):
+        obs_shape = flatten(obs_space.sample()).shape
+        action_shape = action_space.shape
+        self.obs_space = obs_space
         self.capacity = capacity
         self.batch_size = batch_size
         self.device = device
         self.image_size = image_size
         self.transform = transform
-        # the proprioceptive obs is stored as float32, pixels obs as uint8
+        # the proprioceptive obs is stored as float32, mixeds obs as uint8
         obs_dtype = np.float32 if len(obs_shape) == 1 else np.uint8
         
         self.obses = np.empty((capacity, *obs_shape), dtype=obs_dtype)
@@ -92,7 +92,7 @@ class ReplayBuffer(Dataset):
     
 
     def add(self, obs, action, reward, next_obs, done):
-       
+        obs = flatten(obs)
         np.copyto(self.obses[self.idx], obs)
         np.copyto(self.actions[self.idx], action)
         np.copyto(self.rewards[self.idx], reward)
@@ -111,6 +111,9 @@ class ReplayBuffer(Dataset):
         obses = self.obses[idxs]
         next_obses = self.next_obses[idxs]
 
+        obses = unflatten(obses, self.obs_space)
+        next_obses = unflatten(next_obses, self.obs_space)
+
         obses = torch.as_tensor(obses, device=self.device).float()
         actions = torch.as_tensor(self.actions[idxs], device=self.device)
         rewards = torch.as_tensor(self.rewards[idxs], device=self.device)
@@ -127,13 +130,27 @@ class ReplayBuffer(Dataset):
             0, self.capacity if self.full else self.idx, size=self.batch_size
         )
       
-        obses = self.obses[idxs]
-        next_obses = self.next_obses[idxs]
+        obses_raw = self.obses[idxs]
+        next_obses_raw = self.next_obses[idxs]
+
+        obses_raw = unflatten(obses_raw, self.obs_space)
+        next_obses_raw = unflatten(next_obses_raw, self.obs_space)
+
+        # Split mixed obs into image and state
+        state, obses = split_obs(obses_raw)
+        next_state, next_obses = split_obs(next_obses_raw)
+        
         pos = obses.copy()
 
+        # Crop
         obses = random_crop(obses, self.image_size)
         next_obses = random_crop(next_obses, self.image_size)
         pos = random_crop(pos, self.image_size)
+
+        # Recombine
+        obses = combine_obs(state, obses)
+        next_obses = combine_obs(next_state, next_obses)
+        pos = combine_obs(state, pos)
     
         obses = torch.as_tensor(obses, device=self.device).float()
         next_obses = torch.as_tensor(
@@ -189,6 +206,9 @@ class ReplayBuffer(Dataset):
         next_obs = self.next_obses[idx]
         not_done = self.not_dones[idx]
 
+        obs = unflatten(obs, self.obs_space)
+        next_obs = unflatten(next_obs, self.obs_space)
+
         if self.transform:
             obs = self.transform(obs)
             next_obs = self.transform(next_obs)
@@ -197,35 +217,6 @@ class ReplayBuffer(Dataset):
 
     def __len__(self):
         return self.capacity 
-
-class FrameStack(gym.Wrapper):
-    def __init__(self, env, k):
-        gym.Wrapper.__init__(self, env)
-        self._k = k
-        self._frames = deque([], maxlen=k)
-        shp = env.observation_space.shape
-        self.observation_space = gym.spaces.Box(
-            low=0,
-            high=1,
-            shape=((shp[0] * k,) + shp[1:]),
-            dtype=env.observation_space.dtype
-        )
-        self._max_episode_steps = env._max_episode_steps
-
-    def reset(self):
-        obs = self.env.reset()
-        for _ in range(self._k):
-            self._frames.append(obs)
-        return self._get_obs()
-
-    def step(self, action):
-        obs, reward, done, info = self.env.step(action)
-        self._frames.append(obs)
-        return self._get_obs(), reward, done, info
-
-    def _get_obs(self):
-        assert len(self._frames) == self._k
-        return np.concatenate(list(self._frames), axis=0)
 
 
 def random_crop(imgs, output_size):
@@ -260,5 +251,16 @@ def center_crop_image(image, output_size):
     image = image[:, top:top + new_h, left:left + new_w]
     return image
 
+def split_obs(obs):
+    """Split a dict obs into state and images."""
+    return obs['state'], obs['img']
+
+def combine_obs(state, img):
+    return dict(state=state, img=img)
 
 
+
+def split_obs_shape(obs_shape):
+    obs = np.zeros(obs_shape)
+    state, img = split_obs(obs)
+    return state.shape, img.shape

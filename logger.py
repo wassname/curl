@@ -7,6 +7,7 @@ import torch
 import torchvision
 import numpy as np
 from termcolor import colored
+from rich import print
 
 FORMAT_CONFIG = {
     'rl': {

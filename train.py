@@ -8,7 +8,7 @@ import sys
 import random
 import time
 import json
-import dmc2gym
+# import dmc2gym
 import copy
 
 import utils
@@ -17,20 +17,21 @@ from video import VideoRecorder
 
 from curl_sac import CurlSacAgent
 from torchvision import transforms
-
+import apple_gym.env
+from diy_gym.utils import flatten, unflatten
 
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
-    parser.add_argument('--domain_name', default='cheetah')
-    parser.add_argument('--task_name', default='run')
-    parser.add_argument('--pre_transform_image_size', default=100, type=int)
+    parser.add_argument('--domain_name', default='ApplePick-v0')
+    parser.add_argument('--pre_transform_image_size', default=124, type=int)
 
     parser.add_argument('--image_size', default=84, type=int)
     parser.add_argument('--action_repeat', default=1, type=int)
     parser.add_argument('--frame_stack', default=3, type=int)
+    parser.add_argument('--render', action='store_true')
     # replay buffer
-    parser.add_argument('--replay_buffer_capacity', default=100000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=10000, type=int)
     # train
     parser.add_argument('--agent', default='curl_sac', type=str)
     parser.add_argument('--init_steps', default=1000, type=int)
@@ -52,7 +53,7 @@ def parse_args():
     parser.add_argument('--actor_log_std_max', default=2, type=float)
     parser.add_argument('--actor_update_freq', default=2, type=int)
     # encoder
-    parser.add_argument('--encoder_type', default='pixel', type=str)
+    parser.add_argument('--encoder_type', default='mixed', type=str)
     parser.add_argument('--encoder_feature_dim', default=50, type=int)
     parser.add_argument('--encoder_lr', default=1e-3, type=float)
     parser.add_argument('--encoder_tau', default=0.05, type=float)
@@ -66,7 +67,7 @@ def parse_args():
     parser.add_argument('--alpha_beta', default=0.5, type=float)
     # misc
     parser.add_argument('--seed', default=1, type=int)
-    parser.add_argument('--work_dir', default='.', type=str)
+    parser.add_argument('--work_dir', default='./runs', type=str)
     parser.add_argument('--save_tb', default=False, action='store_true')
     parser.add_argument('--save_buffer', default=False, action='store_true')
     parser.add_argument('--save_video', default=False, action='store_true')
@@ -91,8 +92,10 @@ def evaluate(env, agent, video, num_episodes, L, step, args):
             episode_reward = 0
             while not done:
                 # center crop image
-                if args.encoder_type == 'pixel':
-                    obs = utils.center_crop_image(obs,args.image_size)
+                if args.encoder_type == 'mixed':
+                    state, img = utils.split_obs(obs)
+                    img = utils.center_crop_image(img, args.image_size)
+                    obs = utils.combine_obs(state, img)
                 with utils.eval_mode(agent):
                     if sample_stochastically:
                         action = agent.sample_action(obs)
@@ -106,7 +109,7 @@ def evaluate(env, agent, video, num_episodes, L, step, args):
             L.log('eval/' + prefix + 'episode_reward', episode_reward, step)
             all_ep_rewards.append(episode_reward)
         
-        L.log('eval/' + prefix + 'eval_time', time.time()-start_time , step)
+        L.log('eval/' + prefix + 'eval_time', time.time() - start_time , step)
         mean_ep_reward = np.mean(all_ep_rewards)
         best_ep_reward = np.max(all_ep_rewards)
         L.log('eval/' + prefix + 'mean_episode_reward', mean_ep_reward, step)
@@ -155,27 +158,31 @@ def main():
     if args.seed == -1: 
         args.__dict__["seed"] = np.random.randint(1,1000000)
     utils.set_seed_everywhere(args.seed)
-    env = dmc2gym.make(
-        domain_name=args.domain_name,
-        task_name=args.task_name,
-        seed=args.seed,
-        visualize_reward=False,
-        from_pixels=(args.encoder_type == 'pixel'),
-        height=args.pre_transform_image_size,
-        width=args.pre_transform_image_size,
-        frame_skip=args.action_repeat
-    )
+
+    env = gym.make(args.domain_name, render=args.render)
+    # TODO action repeat wrapper?
+    # env = dmc2gym.make(
+    #     domain_name=args.domain_name,
+    #     task_name=args.task_name,
+    #     seed=args.seed,
+    #     visualize_reward=False,
+    #     from_mixeds=(args.encoder_type == 'mixed'),
+    #     height=args.pre_transform_image_size,
+    #     width=args.pre_transform_image_size,
+    #     frame_skip=args.action_repeat
+    # )
  
     env.seed(args.seed)
 
-    # stack several consecutive frames together
-    if args.encoder_type == 'pixel':
-        env = utils.FrameStack(env, k=args.frame_stack)
+    # # stack several consecutive frames together
+    if args.encoder_type == 'mixed':
+        from apple_gym.env.wrappers import FrameStack, ImageState, PermuteImages
+        env = FrameStack(PermuteImages(ImageState(env), keys=['img']), n=args.frame_stack, keys=['img'])
     
     # make directory
     ts = time.gmtime() 
     ts = time.strftime("%m-%d", ts)    
-    env_name = args.domain_name + '-' + args.task_name
+    env_name = args.domain_name
     exp_name = env_name + '-' + ts + '-im' + str(args.image_size) +'-b'  \
     + str(args.batch_size) + '-s' + str(args.seed)  + '-' + args.encoder_type
     args.work_dir = args.work_dir + '/'  + exp_name
@@ -194,16 +201,15 @@ def main():
 
     action_shape = env.action_space.shape
 
-    if args.encoder_type == 'pixel':
-        obs_shape = (3*args.frame_stack, args.image_size, args.image_size)
-        pre_aug_obs_shape = (3*args.frame_stack,args.pre_transform_image_size,args.pre_transform_image_size)
-    else:
-        obs_shape = env.observation_space.shape
-        pre_aug_obs_shape = obs_shape
+    # TODO, I need cropped aug shape now...
+    # TODO I need to make split obs and combine obs?
+    img = env.observation_space.sample()['img']
+    img_aug = utils.center_crop_image(img, args.image_size)
+    obs_shape = {'img': img_aug.shape, 'state': env.observation_space['state'].shape}
 
     replay_buffer = utils.ReplayBuffer(
-        obs_shape=pre_aug_obs_shape,
-        action_shape=action_shape,
+        obs_space=env.observation_space,
+        action_space=env.action_space,
         capacity=args.replay_buffer_capacity,
         batch_size=args.batch_size,
         device=device,
@@ -243,6 +249,7 @@ def main():
                 L.log('train/episode_reward', episode_reward, step)
 
             obs = env.reset()
+            assert env.observation_space.contains(obs), f'obs should be in space. ob={obs} space={env.observation_space}'
             done = False
             episode_reward = 0
             episode_step = 0
@@ -256,6 +263,7 @@ def main():
         else:
             with utils.eval_mode(agent):
                 action = agent.sample_action(obs)
+        assert env.action_space.contains(action), f'obs should be in space. ob={action} space={env.action_space}'
 
         # run training update
         if step >= args.init_steps:

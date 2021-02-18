@@ -1,3 +1,33 @@
+Adapt to Apple gym
+
+
+TODO:
+- apple
+  - make env that returns seperate obs dict
+  - make a wrapper that flattens act, and normalises act
+  - make a wrapper that flattens obs...
+  - mkae a wrapper that does grconv
+  - norm
+    - [x] space should be acc, but it's not fix in diy gym
+    - [ ] a wrapper that will normaction
+    - [ ] a wrapper to norm dict obs
+    - then norm based on space?
+- this
+  - make env handle it
+  - make replay buffer handle it
+
+- we take in flat array which contains [...state, ...img_flat]
+- we reshape in encoder
+- no resize img
+- always use pixels of course, otherwise no curl
+- [ ] replay buffer store flat... even tho pixel mode
+- [ ] custom encoder?
+
+
+`./scripts/run.sh`
+
+-------------------------
+
 # CURL: Contrastive Unsupervised Representation Learning for Sample-Efficient Reinforcement Learning
 
 This repository is the official implementation of [CURL](https://mishalaskin.github.io/curl/) for the DeepMind control experiments. Atari experiments were done in a separate codebase available [here](https://github.com/aravindsrinivas/curl_rainbow). Our implementation of SAC is based on [SAC+AE](https://github.com/denisyarats/pytorch_sac_ae) by Denis Yarats. 
@@ -28,6 +58,7 @@ In your console, you should see printouts that look like:
 
 ```
 | train | E: 221 | S: 28000 | D: 18.1 s | R: 785.2634 | BR: 3.8815 | A_LOSS: -305.7328 | CR_LOSS: 190.9854 | CU_LOSS: 0.0000
+
 | train | E: 225 | S: 28500 | D: 18.6 s | R: 832.4937 | BR: 3.9644 | A_LOSS: -308.7789 | CR_LOSS: 126.0638 | CU_LOSS: 0.0000
 | train | E: 229 | S: 29000 | D: 18.8 s | R: 683.6702 | BR: 3.7384 | A_LOSS: -311.3941 | CR_LOSS: 140.2573 | CU_LOSS: 0.0000
 | train | E: 233 | S: 29500 | D: 19.6 s | R: 838.0947 | BR: 3.7254 | A_LOSS: -316.9415 | CR_LOSS: 136.5304 | CU_LOSS: 0.0000
