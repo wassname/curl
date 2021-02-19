@@ -1,5 +1,7 @@
 Adapt to Apple gym
 
+UPTO: env.render returns nothing... make it return last obs. This should have
+video work
 
 TODO:
 - apple
